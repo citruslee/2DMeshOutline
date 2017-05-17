@@ -3,14 +3,23 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
-#include <imgui.h>
+#include "imgui.h"
 #include "imgui_impl_dx11.hpp"
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tinyobj.hpp"
 
 #pragma comment (lib, "d3d11.lib")
 #pragma comment (lib, "D3DCompiler.lib")
 
 #define SCREEN_WIDTH  800
 #define SCREEN_HEIGHT 600
+
+struct VERTEX
+{
+	FLOAT X, Y, Z;
+	DirectX::XMFLOAT4 Color;
+};
 
 IDXGISwapChain *swapchain;
 ID3D11Device *dev;
@@ -22,11 +31,11 @@ ID3D11PixelShader *pPS;
 ID3D11Buffer *pVBuffer;
 D3D11_VIEWPORT viewport;
 
-struct VERTEX 
-{ 
-	FLOAT X, Y, Z; 
-	DirectX::XMFLOAT4 Color; 
-};
+tinyobj::attrib_t attrib;
+std::vector<tinyobj::shape_t> shapes;
+std::vector<VERTEX> vertices;
+
+
 
 void InitD3D(HWND hWnd);
 void RenderFrame(void);
@@ -51,7 +60,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	RECT wr = { 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT };
 	AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
-	hWnd = CreateWindowEx(NULL, L"WindowClass", L"Outline - Made by Citrus", WS_OVERLAPPEDWINDOW, 300, 300, wr.right - wr.left, wr.bottom - wr.top, NULL, NULL, hInstance, NULL);
+	hWnd = CreateWindowEx(NULL, L"WindowClass", L"Outline - Made by Citrus", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, wr.right - wr.left, wr.bottom - wr.top, NULL, NULL, hInstance, NULL);
 	ShowWindow(hWnd, nCmdShow);
 
 
@@ -128,9 +137,12 @@ void RenderFrame(void)
 	devcon->OMSetRenderTargets(1, &backbuffer, NULL);
 	devcon->RSSetViewports(1, &viewport);
 	devcon->ClearRenderTargetView(backbuffer, clearColor);
+	devcon->VSSetShader(pVS, 0, 0);
+	devcon->IASetInputLayout(pLayout);
+	devcon->PSSetShader(pPS, 0, 0);
 	devcon->IASetVertexBuffers(0, 1, &pVBuffer, &stride, &offset);
 	devcon->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	devcon->Draw(3, 0);
+	devcon->Draw(vertices.size(), 0);
 	ImGui::Render();
 	swapchain->Present(0, 0);
 }
@@ -150,18 +162,35 @@ void CleanD3D(void)
 
 void InitGraphics()
 {
-	VERTEX OurVertices[] =
+
+	const char *filename = "C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";
+
+	std::string err;
+	bool ret =
+		tinyobj::LoadObj(&attrib, &shapes, nullptr, &err, filename);
+	
+	
+	for (int i = 0; i < attrib.vertices.size() / 3; i++)
 	{
-		{ 0.0f, 0.5f, 0.0f, DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f) },
-		{ 0.45f, -0.5, 0.0f, DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) },
-		{ -0.45f, -0.5f, 0.0f, DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) }
-	};
+		VERTEX v = VERTEX();
+		v.X = attrib.vertices[3 * i] * 0.001f;
+		v.Y = attrib.vertices[3 * i + 1] * 0.001f;
+		v.Z = attrib.vertices[3 * i + 2];
+
+		v.Color.x = 1.0f;//attrib.normals[i];
+		v.Color.y = 1.0f;//attrib.normals[i + 1];
+		v.Color.z = 1.0f;//attrib.normals[i + 2];
+		v.Color.w = 1.0f;
+
+		vertices.push_back(v);
+	}
+	
 
 	D3D11_BUFFER_DESC bd;
 	ZeroMemory(&bd, sizeof(bd));
 
 	bd.Usage = D3D11_USAGE_DYNAMIC;
-	bd.ByteWidth = sizeof(VERTEX) * 3;
+	bd.ByteWidth = sizeof(VERTEX) * vertices.size();
 	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
@@ -169,7 +198,7 @@ void InitGraphics()
 
 	D3D11_MAPPED_SUBRESOURCE ms;
 	devcon->Map(pVBuffer, NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
-	memcpy(ms.pData, OurVertices, sizeof(OurVertices));
+	memcpy(ms.pData, vertices.data(), vertices.size() * sizeof(VERTEX));
 	devcon->Unmap(pVBuffer, NULL);
 }
 
@@ -182,9 +211,6 @@ void InitPipeline()
 	dev->CreateVertexShader(VS->GetBufferPointer(), VS->GetBufferSize(), NULL, &pVS);
 	dev->CreatePixelShader(PS->GetBufferPointer(), PS->GetBufferSize(), NULL, &pPS);
 
-	devcon->VSSetShader(pVS, 0, 0);
-	devcon->PSSetShader(pPS, 0, 0);
-
 	D3D11_INPUT_ELEMENT_DESC ied[] =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -192,7 +218,7 @@ void InitPipeline()
 	};
 
 	dev->CreateInputLayout(ied, 2, VS->GetBufferPointer(), VS->GetBufferSize(), &pLayout);
-	devcon->IASetInputLayout(pLayout);
+	
 }
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
