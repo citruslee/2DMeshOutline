@@ -12,8 +12,8 @@
 #pragma comment (lib, "d3d11.lib")
 #pragma comment (lib, "D3DCompiler.lib")
 
-#define SCREEN_WIDTH  800
-#define SCREEN_HEIGHT 600
+#define SCREEN_WIDTH  400
+#define SCREEN_HEIGHT 300
 
 struct VERTEX
 {
@@ -21,21 +21,35 @@ struct VERTEX
 	DirectX::XMFLOAT4 Color;
 };
 
-IDXGISwapChain *swapchain;
-ID3D11Device *dev;
-ID3D11DeviceContext *devcon;
-ID3D11RenderTargetView *backbuffer;
-ID3D11InputLayout *pLayout;
-ID3D11VertexShader *pVS; 
-ID3D11PixelShader *pPS;
-ID3D11Buffer *pVBuffer;
-D3D11_VIEWPORT viewport;
+// Define the constant data used to communicate with shaders.
+typedef struct ConstantBuffer
+{
+	DirectX::XMFLOAT4X4 mWorldViewProj;
+	DirectX::XMFLOAT4 vSomeVectorThatMayBeNeededByASpecificShader;
+	float fSomeFloatThatMayBeNeededByASpecificShader;
+	float fTime;
+	float fSomeFloatThatMayBeNeededByASpecificShader2;
+	float fSomeFloatThatMayBeNeededByASpecificShader3;
+} VS_CONSTANT_BUFFER;
+
+
+IDXGISwapChain *swapchain = nullptr;
+ID3D11Device *dev = nullptr;
+ID3D11DeviceContext *devcon = nullptr;
+ID3D11RenderTargetView *backbuffer = nullptr;
+ID3D11InputLayout *pLayout = nullptr;
+ID3D11VertexShader *pVS = nullptr;
+ID3D11PixelShader *pPS = nullptr;
+ID3D11Buffer *pVBuffer = nullptr;
+ID3D11Buffer*   g_pConstantBuffer11 = nullptr;
+D3D11_VIEWPORT viewport = D3D11_VIEWPORT();
 
 tinyobj::attrib_t attrib;
 std::vector<tinyobj::shape_t> shapes;
 std::vector<VERTEX> vertices;
 
-
+WORD oldMouseX, oldMouseY, mouseX, mouseY;
+float angle = 0;
 
 void InitD3D(HWND hWnd);
 void RenderFrame(void);
@@ -131,6 +145,30 @@ void RenderFrame(void)
 		ImGui::End();
 	}
 
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	devcon->Map(g_pConstantBuffer11, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+
+	VS_CONSTANT_BUFFER* dataPtr = (VS_CONSTANT_BUFFER*)mappedResource.pData;
+
+	static float a = 0.0f;
+	a += 0.0001f;
+
+	auto radians = float(3.14f * (angle - 90.0f) / 180.0f);
+
+	// calculate the camera's position
+	auto cameraX = 0 + sin(radians)*mouseY;     // multiplying by mouseY makes the
+	auto cameraZ = 0 + cos(radians)*mouseY;    // camera get closer/farther away with mouseY
+	auto cameraY = 0 + mouseY / 2.0f;
+
+
+	//dataPtr->mWorldViewProj = view;
+	dataPtr->vSomeVectorThatMayBeNeededByASpecificShader = DirectX::XMFLOAT4(1, sin(a), 1, 1);
+	dataPtr->fSomeFloatThatMayBeNeededByASpecificShader = 3.0f;
+	dataPtr->fTime = 1.0f;
+	dataPtr->fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
+	dataPtr->fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
+	devcon->Unmap(g_pConstantBuffer11, 0);
+
 	float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
 	UINT stride = sizeof(VERTEX);
 	UINT offset = 0;
@@ -140,6 +178,7 @@ void RenderFrame(void)
 	devcon->VSSetShader(pVS, 0, 0);
 	devcon->IASetInputLayout(pLayout);
 	devcon->PSSetShader(pPS, 0, 0);
+	devcon->VSSetConstantBuffers(0, 1, &g_pConstantBuffer11);
 	devcon->IASetVertexBuffers(0, 1, &pVBuffer, &stride, &offset);
 	devcon->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	devcon->Draw(vertices.size(), 0);
@@ -169,8 +208,18 @@ void InitGraphics()
 	bool ret =
 		tinyobj::LoadObj(&attrib, &shapes, nullptr, &err, filename);
 	
-	
-	for (int i = 0; i < attrib.vertices.size() / 3; i++)
+	VERTEX OurVertices[] =
+	{
+		{ 0.0f, 0.5f, 0.0f, DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f) },
+		{ 0.45f, -0.5, 0.0f,  DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) },
+		{ -0.45f, -0.5f, 0.0f,  DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f) }
+	};
+
+	vertices.push_back(OurVertices[0]);
+	vertices.push_back(OurVertices[1]);
+	vertices.push_back(OurVertices[2]);
+
+	/*for (int i = 0; i < attrib.vertices.size() / 3; i++)
 	{
 		VERTEX v = VERTEX();
 		v.X = attrib.vertices[3 * i] * 0.001f;
@@ -183,7 +232,7 @@ void InitGraphics()
 		v.Color.w = 1.0f;
 
 		vertices.push_back(v);
-	}
+	}*/
 	
 
 	D3D11_BUFFER_DESC bd;
@@ -219,6 +268,42 @@ void InitPipeline()
 
 	dev->CreateInputLayout(ied, 2, VS->GetBufferPointer(), VS->GetBufferSize(), &pLayout);
 	
+	
+
+	// Supply the vertex shader constant data.
+	VS_CONSTANT_BUFFER cbuffer = VS_CONSTANT_BUFFER();
+	//cbuffer.mWorldViewProj = { ... };
+	cbuffer.vSomeVectorThatMayBeNeededByASpecificShader = DirectX::XMFLOAT4(1, 1, 0, 1);
+	cbuffer.fSomeFloatThatMayBeNeededByASpecificShader = 3.0f;
+	cbuffer.fTime = 1.0f;
+	cbuffer.fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
+	cbuffer.fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
+
+	// Fill in a buffer description.
+	D3D11_BUFFER_DESC cbDesc;
+	cbDesc.ByteWidth = sizeof(VS_CONSTANT_BUFFER);
+	cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+	cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	cbDesc.MiscFlags = 0;
+	cbDesc.StructureByteStride = 0;
+
+	// Fill in the subresource data.
+	D3D11_SUBRESOURCE_DATA InitData;
+	InitData.pSysMem = &cbuffer;
+	InitData.SysMemPitch = 0;
+	InitData.SysMemSlicePitch = 0;
+
+	// Create the buffer.
+	auto hr = dev->CreateBuffer(&cbDesc, &InitData,	&g_pConstantBuffer11);
+
+	if (FAILED(hr))
+	{
+		exit(0);
+	}
+
+	// Set the buffer.
+	
 }
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -244,6 +329,28 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
+	case WM_MOUSEMOVE:
+		// save old mouse coordinates
+		oldMouseX = mouseX;
+		oldMouseY = mouseY;
+
+		// get mouse coordinates from Windows
+		mouseX = LOWORD(lParam);
+		mouseY = HIWORD(lParam);
+
+		// these lines limit the camera's range
+		/*if (mouseY < 200)
+			mouseY = 200;
+		if (mouseY > 450)
+			mouseY = 450;*/
+
+		if ((mouseX - oldMouseX) > 0)             // mouse moved to the right
+			angle += 3.0f;
+		else if ((mouseX - oldMouseX) < 0)     // mouse moved to the left
+			angle -= 3.0f;
+
+		return 0;
+		break;
 	}
 
 	return DefWindowProc(hWnd, message, wParam, lParam);
