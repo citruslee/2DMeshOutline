@@ -6,9 +6,9 @@ struct VOut
 
 cbuffer VS_CONSTANT_BUFFER : register(b0)
 {
-	matrix mWorldViewProj;
+	matrix wvp;
 	float4  vSomeVectorThatMayBeNeededByASpecificShader;
-	float fSomeFloatThatMayBeNeededByASpecificShader;
+	float scale;
 	float fTime;
 	float fSomeFloatThatMayBeNeededByASpecificShader2;
 	float fSomeFloatThatMayBeNeededByASpecificShader3;
@@ -19,7 +19,8 @@ VOut main(float4 position : POSITION, float4 color : COLOR)
 {
 	VOut output;
 
-	output.position = position;
+	output.position = mul(position, wvp);
+	//output.position.z = 0.0f;
 	output.color = vSomeVectorThatMayBeNeededByASpecificShader;
 
 	return output;
