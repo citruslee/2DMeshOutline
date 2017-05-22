@@ -36,6 +36,9 @@
     <ClCompile Include="imgui_impl_dx11.cpp">
       <Filter>Source Files\3rdparty</Filter>
     </ClCompile>
+    <ClCompile Include="clipper.cpp">
+      <Filter>Source Files\3rdparty</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="VertexShader.hlsl">
@@ -72,6 +75,9 @@
     </ClInclude>
     <ClInclude Include="LogWindow.hpp">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="clipper.hpp">
+      <Filter>Header Files\3rdparty</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
