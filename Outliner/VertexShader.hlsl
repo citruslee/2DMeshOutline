@@ -21,7 +21,7 @@ VOut main(float4 position : POSITION, float4 color : COLOR)
 
 	output.position = mul(position, wvp);
 	//output.position.z = 0.0f;
-	output.color = vSomeVectorThatMayBeNeededByASpecificShader;
+	output.color = color;
 
 	return output;
 }

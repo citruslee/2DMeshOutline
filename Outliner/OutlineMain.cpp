@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include "imgui.h"
 #include "imgui_impl_dx11.hpp"
+#include "LogWindow.hpp"
+
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tinyobj.hpp"
@@ -13,8 +15,11 @@
 #pragma comment (lib, "d3d11.lib")
 #pragma comment (lib, "D3DCompiler.lib")
 
-#define SCREEN_WIDTH  1600
-#define SCREEN_HEIGHT 900
+#define SCREEN_WIDTH  400
+#define SCREEN_HEIGHT 300
+
+
+static LogWindow logger = LogWindow();
 
 struct VERTEX
 {
@@ -111,6 +116,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	MSG msg;
 	while (TRUE)
 	{
+
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
@@ -121,6 +127,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				break;
 			}
 		}
+		logger.AddLog("[%s] %s\n", "runtime", "Hello from MainLoop");
 		RenderFrame();
 	}
 	CleanD3D();
@@ -171,7 +178,6 @@ void InitD3D(HWND hWnd)
 	dev->CreateRenderTargetView(pBackBuffer, nullptr, &backbuffer);
 	pBackBuffer->Release();
 
-	ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
 	viewport.TopLeftX = 0;
 	viewport.TopLeftY = 0;
 	viewport.Width = SCREEN_WIDTH;
@@ -202,7 +208,7 @@ void RenderFrame(void)
 
 		ImGui::SliderFloat("2D Mesh Scale", &scale, 0.0001f, 1.0f);
 		ImGui::Checkbox("Render Wireframe?", &renderwireframe);
-
+		logger.Draw("Log");
 		ImGui::End();
 	}
 
@@ -291,8 +297,9 @@ void CleanD3D(void)
 
 void InitGraphics()
 {
+	int idx = 0;
 
-	const char *filename = "C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";
+	const char *filename = "C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";//"C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
@@ -302,8 +309,6 @@ void InitGraphics()
 	{
 		throw std::runtime_error(err);
 	}
-
-	int idx = 0;
 
 	for (const tinyobj::shape_t& shape : shapes)
 	{
@@ -315,10 +320,13 @@ void InitGraphics()
 			vertex.y = attrib.vertices[3 * index.vertex_index + 1];
 			vertex.z = attrib.vertices[3 * index.vertex_index + 2];
 
-			
-			vertex.Color = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+			vertex.Color.x = attrib.normals[3 * index.normal_index + 0];
+			vertex.Color.x = attrib.normals[3 * index.normal_index + 1];
+			vertex.Color.x = attrib.normals[3 * index.normal_index + 2];
+			vertex.Color.x = 1.0;
+
+			//vertex.Color = DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 			vertices.push_back(vertex);
-			
 
 			indices.push_back(idx);
 			idx += 1;
