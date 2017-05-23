@@ -8,7 +8,7 @@
 #include "imgui_impl_dx11.hpp"
 #include "LogWindow.hpp"
 #include "clipper.hpp"  
-
+#include "Hull.hpp"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tinyobj.hpp"
 
@@ -64,6 +64,10 @@ DirectX::XMVECTOR DefaultForward = DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
 DirectX::XMVECTOR DefaultRight = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
 DirectX::XMVECTOR camForward = DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
 DirectX::XMVECTOR camRight = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
+
+ID3D11Buffer *outlinevbuffer = nullptr;
+std::vector<VERTEX> outlineverts;
+std::vector<Point> pts;
 
 float moveLeftRight = 0.0f;
 float moveBackForward = 0.0f;
@@ -175,6 +179,11 @@ public:
 		isIndexed = true;
 	}
 
+	std::vector<VERTEX> &GetVertices()
+	{
+		return vertices;
+	}
+
 private:
 	std::vector<VERTEX> vertices;
 	std::vector<int> indices;
@@ -183,89 +192,6 @@ private:
 	ID3D11Buffer *pVBuffer = nullptr;
 	ID3D11Buffer *pIBuffer = nullptr;
 };
-
-/*int CalculateWindingOrder(std::vector<DirectX::XMFLOAT3> points)
-{
-	// the sign of the 'area' of the polygon is all we are interested in.
-	auto area = CalculateSignedArea(points);
-	if (area < 0.0)
-		return 1;
-	else if (area > 0.0)
-		return -1;
-	return 0; // error condition - not even verts to calculate, non-simple poly, etc.
-}
-
-double CalculateSignedArea(std::vector<DirectX::XMFLOAT3> points)
-{
-	double area = 0.0;
-	for (int i = 0; i < points.size(); i++)
-	{
-		int j = (i + 1) % points.size();
-		area += points[i].x * points[j].y;
-		area -= points[i].y * points[j].x;
-	}
-	area /= 2.0f;
-
-	return area;
-}
-
-std::vector<int> OrganizeEdges(std::vector<int> edges, std::vector<DirectX::XMFLOAT3> positions)
-{
-	auto visited = new Dictionary<int, bool>();
-	std::vector<int> edgeList;
-	std::vector<int> resultList;
-	auto nextIndex = -1;
-	while (resultList.size() < edges.size())
-	{
-		if (nextIndex < 0)
-		{
-			for (int i = 0; i < edges.size(); i += 2)
-			{
-				if (!visited.ContainsKey(i))
-				{
-					nextIndex = edges[i];
-					break;
-				}
-			}
-		}
-
-		for (int i = 0; i < edges.size(); i += 2)
-		{
-			if (visited.ContainsKey(i))
-				continue;
-
-			int j = i + 1;
-			int k = -1;
-			if (edges[i] == nextIndex)
-				k = j;
-			else if (edges[j] == nextIndex)
-				k = i;
-
-			if (k >= 0)
-			{
-				auto edge = edges[k];
-				visited[i] = true;
-				edgeList.push_back(nextIndex);
-				edgeList.push_back(edge);
-				nextIndex = edge;
-				i = 0;
-			}
-		}
-
-		// calculate winding order - then add to final result.
-		std::vector<DirectX::XMFLOAT3> borderPoints;
-		edgeList.ForEach(ei => borderPoints.Add(positions[ei]));
-		auto winding = CalculateWindingOrder(borderPoints);
-		//if (winding > 0)
-		//	edgeList.Reverse();
-
-		resultList.AddRange(edgeList);
-		std::vector<int> edgeList;
-		nextIndex = -1;
-	}
-
-	return resultList;
-}*/
 
 Mesh obj;
 
@@ -307,7 +233,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				break;
 			}
 		}
-		logger.AddLog("[%s] %s\n", "runtime", "Hello from MainLoop");
+		
 		RenderFrame();
 	}
 	CleanD3D();
@@ -372,7 +298,8 @@ void RenderFrame(void)
 	ImVec4 clear_col = ImColor(114, 144, 154);
 
 	static bool renderwireframe = false;
-	static float scale = 1.0;;
+	static float hullN = 0.1f;
+	static float scale = 0.1f;
 
 	ImGui_ImplDX11_NewFrame();
 	{
@@ -384,9 +311,47 @@ void RenderFrame(void)
 		ImGui::Text("left/right %f", moveLeftRight);
 		ImGui::Text("back/forward %f", moveBackForward);
 
-		ImGui::SliderFloat("2D Mesh Scale", &scale, 0.0001f, 1.0f);
+		ImGui::SliderFloat("N (Hull)", (float *)&hullN, -100.0f, 100.0f);
+		ImGui::SliderFloat("Scale", (float *)&scale, 0.0f, 100.0f);
 		ImGui::Checkbox("Render Wireframe?", &renderwireframe);
+
+		if (ImGui::Button("remap"))
+		{
+			auto outline = HullFinder::FindConcaveHull(pts, hullN);
+			outlinevbuffer->Release();
+			outlinevbuffer = nullptr;
+
+			outlineverts.clear();
+			for (auto &o : outline)
+			{
+				VERTEX vx;
+				vx.pos.x = o.x;
+				vx.pos.y = o.y;
+				vx.pos.z = 0.0f;
+
+				vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
+				outlineverts.push_back(vx);
+			}
+
+
+			D3D11_BUFFER_DESC bd = D3D11_BUFFER_DESC();
+			bd.Usage = D3D11_USAGE_DYNAMIC;
+			bd.ByteWidth = sizeof(VERTEX) * outlineverts.size();
+			bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+			bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+			dev->CreateBuffer(&bd, NULL, &outlinevbuffer);
+
+			D3D11_MAPPED_SUBRESOURCE ms;
+			devcon->Map(outlinevbuffer, NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
+			memcpy(ms.pData, outlineverts.data(), outlineverts.size() * sizeof(VERTEX));
+			devcon->Unmap(outlinevbuffer, NULL);
+
+			logger.AddLog("%s Mapping done. Size: %d N: %f\n", "[ConvexHull]", outlineverts.size(), hullN);
+		}
 		logger.Draw("Log");
+
+	
 		ImGui::End();
 	}
 
@@ -409,27 +374,29 @@ void RenderFrame(void)
 		moveBackForward -= speed;
 	}
 
-	D3D11_MAPPED_SUBRESOURCE mappedResource;
-	devcon->Map(g_pConstantBuffer11, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	{
+		D3D11_MAPPED_SUBRESOURCE mappedResource;
+		devcon->Map(g_pConstantBuffer11, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 
-	VS_CONSTANT_BUFFER* dataPtr = (VS_CONSTANT_BUFFER*)mappedResource.pData;
+		VS_CONSTANT_BUFFER* dataPtr = (VS_CONSTANT_BUFFER*)mappedResource.pData;
 
-	static float a = 0.0f;
-	a += 0.0001f;
+		static float a = 0.0f;
+		a += 0.0001f;
 
-	
-	WVP = XMMatrixIdentity();
-	WVP = DirectX::XMMatrixIdentity() * camView * camProjection;
 
-	UpdateCamera();
+		WVP = XMMatrixIdentity();
+		WVP = DirectX::XMMatrixIdentity() * camView * camProjection;
 
-	dataPtr->mWorldViewProj = XMMatrixTranspose(WVP);
-	dataPtr->vSomeVectorThatMayBeNeededByASpecificShader = DirectX::XMFLOAT4(1, sin(a), 1, 1);
-	dataPtr->scale = scale;
-	dataPtr->fTime = 1.0f;
-	dataPtr->fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
-	dataPtr->fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
-	devcon->Unmap(g_pConstantBuffer11, 0);
+		UpdateCamera();
+
+		dataPtr->mWorldViewProj = XMMatrixTranspose(WVP);
+		dataPtr->vSomeVectorThatMayBeNeededByASpecificShader = DirectX::XMFLOAT4(1, sin(a), 1, 1);
+		dataPtr->scale = 1.0f;
+		dataPtr->fTime = 1.0f;
+		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
+		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
+		devcon->Unmap(g_pConstantBuffer11, 0);
+	}
 
 	float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
 	devcon->OMSetRenderTargets(1, &backbuffer, NULL);
@@ -450,6 +417,30 @@ void RenderFrame(void)
 	devcon->VSSetConstantBuffers(0, 1, &g_pConstantBuffer11);
 	
 	obj.DrawMesh(devcon);
+
+	UINT stride = sizeof(VERTEX);
+	UINT offset = 0;
+
+
+
+	{
+		D3D11_MAPPED_SUBRESOURCE mappedResource;
+		devcon->Map(g_pConstantBuffer11, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+
+		VS_CONSTANT_BUFFER* dataPtr = (VS_CONSTANT_BUFFER*)mappedResource.pData;
+
+		dataPtr->mWorldViewProj = XMMatrixTranspose(WVP);
+		dataPtr->scale = scale;
+		dataPtr->fTime = 1.0f;
+		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
+		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
+		devcon->Unmap(g_pConstantBuffer11, 0);
+	}
+
+	devcon->IASetVertexBuffers(0, 1, &outlinevbuffer, &stride, &offset);
+
+	devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+	devcon->Draw(outlineverts.size(), 0);
 	
 	ImGui::Render();
 	swapchain->Present(0, 0);
@@ -495,6 +486,42 @@ void InitGraphics()
 
 	//Set the Projection matrix
 	camProjection = DirectX::XMMatrixPerspectiveFovLH(0.4f*3.14f, (float)SCREEN_WIDTH / SCREEN_HEIGHT, 1.0f, 1000.0f);
+
+
+	auto &vert = obj.GetVertices();
+	
+	for (auto &v : vert)
+	{
+		Point pt;
+
+		pt.x = v.pos.x;
+		pt.y = v.pos.y;
+		pts.push_back(pt);
+	}
+
+	auto outline = HullFinder::FindConcaveHull(pts, 10);
+	for (auto &o : outline)
+	{
+		VERTEX vx;
+		vx.pos.x = o.x;
+		vx.pos.y = o.y;
+		vx.pos.z = 0.0f;
+
+		vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
+		outlineverts.push_back(vx);
+	}
+
+	D3D11_BUFFER_DESC bd = D3D11_BUFFER_DESC();
+	bd.Usage = D3D11_USAGE_DYNAMIC;
+	bd.ByteWidth = sizeof(VERTEX) * outlineverts.size();
+	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+	dev->CreateBuffer(&bd, NULL, &outlinevbuffer);
+	D3D11_MAPPED_SUBRESOURCE ms;
+	devcon->Map(outlinevbuffer, NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
+	memcpy(ms.pData, outlineverts.data(), outlineverts.size() * sizeof(VERTEX));
+	devcon->Unmap(outlinevbuffer, NULL);
 }
 
 void InitPipeline()

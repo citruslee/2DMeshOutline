@@ -79,5 +79,8 @@
     <ClInclude Include="clipper.hpp">
       <Filter>Header Files\3rdparty</Filter>
     </ClInclude>
+    <ClInclude Include="Hull.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

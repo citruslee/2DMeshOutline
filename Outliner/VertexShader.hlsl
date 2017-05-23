@@ -20,6 +20,9 @@ VOut main(float4 position : POSITION, float4 color : COLOR)
 	VOut output;
 
 	output.position = mul(position, wvp);
+	output.position.x *= scale;
+	output.position.y *= scale;
+	output.position.z *= scale;
 	//output.position.z = 0.0f;
 	output.color = color;
 
