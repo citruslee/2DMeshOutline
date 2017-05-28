@@ -38,17 +38,6 @@ public:
 
 	void LoadObj(ID3D11Device *dev, ID3D11DeviceContext *devcon, const char *filename)
 	{
-		/*int idx = 0;
-		tinyobj::attrib_t attrib;
-		std::vector<tinyobj::shape_t> shapes;
-		std::vector<tinyobj::material_t> materials;
-		std::string err;
-
-		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, filename))
-		{
-			throw std::runtime_error(err);
-		}*/
-
 		std::vector<tinyobj::shape_t> shapes;
 		std::vector<tinyobj::material_t> materials;
 		std::string errors;
@@ -76,31 +65,7 @@ public:
 			{
 				indices.push_back(index + firstVertex);
 			}
-			//m_indexCount = indices.size();
-
 		}
-
-		/*for (const tinyobj::shape_t& shape : shapes)
-		{
-			for (const tinyobj::index_t& index : shape.mesh.indices)
-			{
-				VERTEX vertex = {};
-
-				vertex.pos = DirectX::XMFLOAT3(attrib.vertices[3 * index.vertex_index + 0], attrib.vertices[3 * index.vertex_index + 1], attrib.vertices[3 * index.vertex_index + 2]);
-
-				vertex.color.x = attrib.normals[3 * index.normal_index + 0];
-				vertex.color.x = attrib.normals[3 * index.normal_index + 1];
-				vertex.color.x = attrib.normals[3 * index.normal_index + 2];
-				vertex.color.x = 1.0;
-
-				vertices.push_back(vertex);
-
-				indices.push_back(index.vertex_index);
-				indices.push_back(index.vertex_index + 1);
-				indices.push_back(index.vertex_index + 2);
-				
-			}
-		}*/
 
 		D3D11_BUFFER_DESC bd = D3D11_BUFFER_DESC();
 		bd.Usage = D3D11_USAGE_DYNAMIC;

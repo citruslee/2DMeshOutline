@@ -24,6 +24,7 @@ class Outliner
 {
 public:
 	std::vector<LineLoop> GetOutlines(const std::vector<int> &triangles, const std::vector<DirectX::XMFLOAT3> &vertices);
+
 private:
 	std::vector<LineLoop> loops;
 };

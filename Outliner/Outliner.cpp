@@ -39,7 +39,7 @@ std::vector<LineLoop> Outliner::GetOutlines(const std::vector<int>& triangles, c
 	}
 
 	LineLoop line;
-	std::vector<LineLoop> loops;
+	
 	// Loop through edge vertices in order
 	auto i = lookup.begin();
 	while (!lookup.empty())
