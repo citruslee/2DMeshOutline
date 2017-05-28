@@ -4,13 +4,16 @@
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
 #include <unordered_map>
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
 #include "imgui.h"
 #include "imgui_impl_dx11.hpp"
 #include "LogWindow.hpp"
 #include "clipper.hpp"  
-#include "Hull.hpp"
-#define TINYOBJLOADER_IMPLEMENTATION
-#include "tinyobj.hpp"
+#include "Mesh.hpp"
+#include "Outliner.hpp"
 
 #pragma comment (lib, "d3d11.lib")
 #pragma comment (lib, "D3DCompiler.lib")
@@ -22,12 +25,6 @@ using namespace ClipperLib;
 using namespace DirectX;
 
 static LogWindow logger;
-
-struct VERTEX
-{
-	DirectX::XMFLOAT3 pos;
-	DirectX::XMFLOAT4 color;
-};
 
 typedef struct ConstantBuffer
 {
@@ -67,16 +64,12 @@ DirectX::XMVECTOR camRight = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
 
 ID3D11Buffer *outlinevbuffer = nullptr;
 std::vector<VERTEX> outlineverts;
-std::vector<Point> pts;
 
 float moveLeftRight = 0.0f;
 float moveBackForward = 0.0f;
 
 float camYaw = 0.0f;
 float camPitch = 0.0f;
-
-tinyobj::attrib_t attrib;
-std::vector<tinyobj::shape_t> shapes;
 
 WORD oldMouseX, oldMouseY, mouseX, mouseY;
 float angle = 0;
@@ -87,111 +80,28 @@ void CleanD3D(void);
 void InitGraphics(void);
 void InitPipeline(void);
 
-class Mesh
+#pragma warning(disable:4018)
+
+inline XMFLOAT3& operator+=(XMFLOAT3 &l, const XMFLOAT3 &r) { l.x += r.x; l.y += r.y; l.z += r.z; return l; }
+inline XMFLOAT3& operator*=(XMFLOAT3 &l, float r) { l.x *= r; l.y *= r; l.z *= r; return l; }
+inline XMFLOAT3 operator-(const XMFLOAT3 &l, const XMFLOAT3 &r) { return XMFLOAT3(l.x - r.x, l.y - r.y, l.z - r.z); }
+inline XMFLOAT3 operator*(const XMFLOAT3 &l, float r) { return XMFLOAT3(l.x*r, l.y*r, l.z*r); }
+inline XMFLOAT3 operator/(const XMFLOAT3 &l, float r) { return XMFLOAT3(l.x / r, l.y / r, l.z / r); }
+
+inline float Dot(const XMFLOAT3 a, const XMFLOAT3 b)
 {
-public:
-	~Mesh()
-	{
-		pVBuffer->Release();
-		pIBuffer->Release();
-	}
+	return a.x*b.x + a.y*b.y + a.z*b.z;
+}
 
-	void DrawMesh(ID3D11DeviceContext *devcon)
-	{
-		UINT stride = sizeof(VERTEX);
-		UINT offset = 0;
-		if (isIndexed)
-		{
-			devcon->IASetIndexBuffer(pIBuffer, DXGI_FORMAT_R32_UINT, 0);
-			devcon->IASetVertexBuffers(0, 1, &pVBuffer, &stride, &offset);
+inline float Len(const XMFLOAT3 a)
+{
+	return sqrt(Dot(a, a));
+}
 
-			devcon->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			devcon->DrawIndexed(indices.size(), 0, 0);
-		}
-		else
-		{
-			devcon->IASetVertexBuffers(0, 1, &pVBuffer, &stride, &offset);
-
-			devcon->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			devcon->Draw(vertices.size(), 0);
-		}
-	}
-
-	void LoadObj(const char *filename)
-	{
-		int idx = 0;
-		tinyobj::attrib_t attrib;
-		std::vector<tinyobj::shape_t> shapes;
-		std::vector<tinyobj::material_t> materials;
-		std::string err;
-
-		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, filename))
-		{
-			throw std::runtime_error(err);
-		}
-
-		for (const tinyobj::shape_t& shape : shapes)
-		{
-			for (const tinyobj::index_t& index : shape.mesh.indices)
-			{
-				VERTEX vertex = {};
-
-				vertex.pos = DirectX::XMFLOAT3(attrib.vertices[3 * index.vertex_index + 0], attrib.vertices[3 * index.vertex_index + 1], attrib.vertices[3 * index.vertex_index + 2]);
-
-				vertex.color.x = attrib.normals[3 * index.normal_index + 0];
-				vertex.color.x = attrib.normals[3 * index.normal_index + 1];
-				vertex.color.x = attrib.normals[3 * index.normal_index + 2];
-				vertex.color.x = 1.0;
-
-				vertices.push_back(vertex);
-
-				indices.push_back(idx);
-				idx += 1;
-			}
-		}
-
-		D3D11_BUFFER_DESC bd = D3D11_BUFFER_DESC();
-		bd.Usage = D3D11_USAGE_DYNAMIC;
-		bd.ByteWidth = sizeof(VERTEX) * vertices.size();
-		bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-		D3D11_BUFFER_DESC indexBufferDesc = D3D11_BUFFER_DESC();
-		indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-		indexBufferDesc.ByteWidth = sizeof(unsigned int) * indices.size();
-		indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-		indexBufferDesc.CPUAccessFlags = 0;
-		indexBufferDesc.MiscFlags = 0;
-
-		dev->CreateBuffer(&bd, NULL, &pVBuffer);
-
-		D3D11_MAPPED_SUBRESOURCE ms;
-		devcon->Map(pVBuffer, NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
-		memcpy(ms.pData, vertices.data(), vertices.size() * sizeof(VERTEX));
-		devcon->Unmap(pVBuffer, NULL);
-
-		D3D11_SUBRESOURCE_DATA InitData;
-		InitData.pSysMem = indices.data();
-		InitData.SysMemPitch = 0;
-		InitData.SysMemSlicePitch = 0;
-
-		dev->CreateBuffer(&indexBufferDesc, &InitData, &pIBuffer);
-		isIndexed = true;
-	}
-
-	std::vector<VERTEX> &GetVertices()
-	{
-		return vertices;
-	}
-
-private:
-	std::vector<VERTEX> vertices;
-	std::vector<int> indices;
-	bool isIndexed = false;
-
-	ID3D11Buffer *pVBuffer = nullptr;
-	ID3D11Buffer *pIBuffer = nullptr;
-};
+inline XMFLOAT3 Normalize(XMFLOAT3 a)
+{
+	return a / Len(a);
+}
 
 Mesh obj;
 
@@ -214,7 +124,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 	hWnd = CreateWindowEx(NULL, L"WindowClass", L"Outline - Made by Citrus", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, wr.right - wr.left, wr.bottom - wr.top, NULL, NULL, hInstance, NULL);
 	ShowWindow(hWnd, nCmdShow);
-
 
 	InitD3D(hWnd);
 	ImGui_ImplDX11_Init(hWnd, dev, devcon);
@@ -317,37 +226,7 @@ void RenderFrame(void)
 
 		if (ImGui::Button("remap"))
 		{
-			auto outline = HullFinder::FindConcaveHull(pts, hullN);
-			outlinevbuffer->Release();
-			outlinevbuffer = nullptr;
-
-			outlineverts.clear();
-			for (auto &o : outline)
-			{
-				VERTEX vx;
-				vx.pos.x = o.x;
-				vx.pos.y = o.y;
-				vx.pos.z = 0.0f;
-
-				vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
-				outlineverts.push_back(vx);
-			}
-
-
-			D3D11_BUFFER_DESC bd = D3D11_BUFFER_DESC();
-			bd.Usage = D3D11_USAGE_DYNAMIC;
-			bd.ByteWidth = sizeof(VERTEX) * outlineverts.size();
-			bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-			bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-			dev->CreateBuffer(&bd, NULL, &outlinevbuffer);
-
-			D3D11_MAPPED_SUBRESOURCE ms;
-			devcon->Map(outlinevbuffer, NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
-			memcpy(ms.pData, outlineverts.data(), outlineverts.size() * sizeof(VERTEX));
-			devcon->Unmap(outlinevbuffer, NULL);
-
-			logger.AddLog("%s Mapping done. Size: %d N: %f\n", "[ConvexHull]", outlineverts.size(), hullN);
+			
 		}
 		logger.Draw("Log");
 
@@ -421,8 +300,6 @@ void RenderFrame(void)
 	UINT stride = sizeof(VERTEX);
 	UINT offset = 0;
 
-
-
 	{
 		D3D11_MAPPED_SUBRESOURCE mappedResource;
 		devcon->Map(g_pConstantBuffer11, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
@@ -438,7 +315,6 @@ void RenderFrame(void)
 	}
 
 	devcon->IASetVertexBuffers(0, 1, &outlinevbuffer, &stride, &offset);
-
 	devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
 	devcon->Draw(outlineverts.size(), 0);
 	
@@ -463,18 +339,7 @@ void InitGraphics()
 {
 	const char *filename = "C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";//"C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";
 
-	obj.LoadObj(filename);
-
-	Path subj;
-	Paths solution;
-	subj <<
-		IntPoint(348, 257) << IntPoint(364, 148) << IntPoint(362, 148) <<
-		IntPoint(326, 241) << IntPoint(295, 219) << IntPoint(258, 88) <<
-		IntPoint(440, 129) << IntPoint(370, 196) << IntPoint(372, 275);
-	ClipperOffset co;
-	co.AddPath(subj, jtRound, etClosedPolygon);
-	co.Execute(solution, -7.0);
-
+	obj.LoadObj(dev, devcon, filename);
 
 	//Camera information
 	camPosition = DirectX::XMVectorSet(0.0f, 5.0f, -8.0f, 0.0f);
@@ -487,29 +352,39 @@ void InitGraphics()
 	//Set the Projection matrix
 	camProjection = DirectX::XMMatrixPerspectiveFovLH(0.4f*3.14f, (float)SCREEN_WIDTH / SCREEN_HEIGHT, 1.0f, 1000.0f);
 
-
-	auto &vert = obj.GetVertices();
-	
-	for (auto &v : vert)
-	{
-		Point pt;
-
-		pt.x = v.pos.x;
-		pt.y = v.pos.y;
-		pts.push_back(pt);
-	}
-
-	auto outline = HullFinder::FindConcaveHull(pts, 10);
-	for (auto &o : outline)
+	Outliner outl;
+	auto outline = outl.GetOutlines(obj.GetTriangles(), obj.GetVertexPositions());
+	for (auto &o : outline[0].positions)
 	{
 		VERTEX vx;
 		vx.pos.x = o.x;
 		vx.pos.y = o.y;
 		vx.pos.z = 0.0f;
-
 		vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
 		outlineverts.push_back(vx);
 	}
+
+	std::vector<XMFLOAT3> normals;
+	for (int i = 0; i < outlineverts.size() - 1; i++)
+	{
+		auto &current = outlineverts[i];
+		auto &next = outlineverts[i + 1];
+		auto dir = Normalize(XMFLOAT3(next.pos.x - current.pos.x, next.pos.y - current.pos.y, 0.0f));
+		XMFLOAT3 normal = XMFLOAT3(-dir.y, dir.x, 0.0f);
+		normals.push_back(normal);
+	}
+
+	for (int i = 0; i < normals.size(); i++)
+	{
+		auto &n0 = normals[(i + normals.size() - 1) % normals.size()];
+		auto &n1 = normals[i];
+		auto v = Normalize(XMFLOAT3(n0.x + n1.x, n0.y + n1.y, 0.0f));
+		v.x = fabsf(n0.x) > fabsf(n1.x) ? n0.x : n1.x;
+		v.y = fabsf(n0.y) > fabsf(n1.y) ? n0.y : n1.y;
+		outlineverts[i].pos += v;
+		outlineverts[i].color = XMFLOAT4(v.x, v.y, 0.0f, 1.0f);
+	}
+	outlineverts.back() = outlineverts[0];
 
 	D3D11_BUFFER_DESC bd = D3D11_BUFFER_DESC();
 	bd.Usage = D3D11_USAGE_DYNAMIC;
