@@ -101,7 +101,7 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				//here be dragons
 				v.x = fabsf(n0.x) > fabsf(n1.x) ? n0.x : n1.x;
 				v.y = fabsf(n0.y) > fabsf(n1.y) ? n0.y : n1.y;
-				outline[i].pos += (v * (offset * repetitions));
+				outline[i].pos += (v * (offset * rep));
 				outline[i].color = XMFLOAT4(v.x, v.y, 0.0f, 1.0f);
 			}
 

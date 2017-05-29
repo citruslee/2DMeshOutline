@@ -21,8 +21,8 @@ static LogWindow logger;
 #include "Outliner.hpp"
 #include "Camera.hpp"
 
-#define SCREEN_WIDTH  400
-#define SCREEN_HEIGHT 300
+#define SCREEN_WIDTH  1600
+#define SCREEN_HEIGHT 900
 
 using namespace DirectX;
 
@@ -248,8 +248,8 @@ void CleanD3D(void)
 
 void InitGraphics()
 {
-	//const char *filename = "C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";
-	const char *filename = "C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";
+	const char *filename = "C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";
+	//const char *filename = "C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";
 	obj.LoadObj(dev, devcon, filename);
 	cam.Init((float)SCREEN_WIDTH, (float)SCREEN_HEIGHT);
 	auto outline = outl.GetOutlines(obj.GetTriangles(), obj.GetVertexPositions());
