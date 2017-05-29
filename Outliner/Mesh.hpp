@@ -1,5 +1,5 @@
 #pragma once
-
+#include "tiny_obj_loader.h"
 struct VERTEX
 {
 	DirectX::XMFLOAT3 pos;

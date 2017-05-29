@@ -14,6 +14,8 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
+static LogWindow logger;
+
 #include "MathExtension.hpp"
 #include "clipper.hpp"  
 #include "Mesh.hpp"
@@ -26,7 +28,7 @@
 using namespace ClipperLib;
 using namespace DirectX;
 
-static LogWindow logger;
+
 
 typedef struct ConstantBuffer
 {
@@ -58,6 +60,7 @@ ID3D11Buffer *outlinevbuffer = nullptr;
 std::vector<VERTEX> outlineverts;
 Camera cam;
 
+std::vector<ExtrudedOutline> outlines;
 
 void InitD3D(HWND hWnd);
 void RenderFrame(void);
@@ -152,6 +155,8 @@ void RenderFrame(void)
 	bool show_another_window = false;
 	ImVec4 clear_col = ImColor(114, 144, 154);
 	static bool renderwireframe = false;
+	static int repetitions = 1;
+	static float offset = 1.0f;
 
 	ImGui_ImplDX11_NewFrame();
 	{
@@ -160,6 +165,18 @@ void RenderFrame(void)
 		{
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 			ImGui::Checkbox("Render Wireframe?", &renderwireframe);
+			ImGui::SliderFloat("Offset", &offset, 0.0f, 10.0f);
+			ImGui::SliderInt("Repetitions", &repetitions, 0, 1000);
+			if (ImGui::Button("Recalculate"))
+			{
+				for (auto &o : outlines)
+				{
+					o.vertexBuffer->Release();
+					o.vertices.clear();
+				}
+				outlines.clear();
+				outlines = outl.GenerateExtrudedOutlines(dev, devcon, offset, repetitions);
+			}
 		}
 		ImGui::End();
 		logger.Draw("Log");
@@ -208,12 +225,14 @@ void RenderFrame(void)
 	
 	obj.DrawMesh(devcon);
 
-	UINT stride = sizeof(VERTEX);
-	UINT offset = 0;
-
-	devcon->IASetVertexBuffers(0, 1, &outlinevbuffer, &stride, &offset);
-	devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
-	devcon->Draw(outlineverts.size(), 0);
+	for (auto &outlineBuffer : outlines)
+	{
+		UINT stride = sizeof(VERTEX);
+		UINT offset = 0;
+		devcon->IASetVertexBuffers(0, 1, &outlineBuffer.vertexBuffer, &stride, &offset);
+		devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+		devcon->Draw(outlineBuffer.vertices.size(), 0);
+	}
 	
 	ImGui::Render();
 	swapchain->Present(0, 0);
@@ -225,7 +244,6 @@ void CleanD3D(void)
 	pLayout->Release();
 	pVS->Release();
 	pPS->Release();
-	
 	swapchain->Release();
 	backbuffer->Release();
 	dev->Release();
@@ -236,54 +254,10 @@ void InitGraphics()
 {
 	//const char *filename = "C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";
 	const char *filename = "C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";
-
 	obj.LoadObj(dev, devcon, filename);
 	cam.Init((float)SCREEN_WIDTH, (float)SCREEN_HEIGHT);
-	
 	auto outline = outl.GetOutlines(obj.GetTriangles(), obj.GetVertexPositions());
-	for (auto &o : outline[0].positions)
-	{
-		VERTEX vx;
-		vx.pos.x = o.x;
-		vx.pos.y = o.y;
-		vx.pos.z = 0.0f;
-		vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
-		outlineverts.push_back(vx);
-	}
-
-	std::vector<XMFLOAT3> normals;
-	for (int i = 0; i < outlineverts.size() - 1; i++)
-	{
-		auto &current = outlineverts[i];
-		auto &next = outlineverts[i + 1];
-		auto dir = Normalize(XMFLOAT3(next.pos.x - current.pos.x, next.pos.y - current.pos.y, 0.0f));
-		XMFLOAT3 normal = XMFLOAT3(-dir.y, dir.x, 0.0f);
-		normals.push_back(normal);
-	}
-
-	for (int i = 0; i < normals.size(); i++)
-	{
-		auto &n0 = normals[(i + normals.size() - 1) % normals.size()];
-		auto &n1 = normals[i];
-		auto v = Normalize(XMFLOAT3(n0.x + n1.x, n0.y + n1.y, 0.0f));
-		v.x = fabsf(n0.x) > fabsf(n1.x) ? n0.x : n1.x;
-		v.y = fabsf(n0.y) > fabsf(n1.y) ? n0.y : n1.y;
-		outlineverts[i].pos += v;
-		outlineverts[i].color = XMFLOAT4(v.x, v.y, 0.0f, 1.0f);
-	}
-	outlineverts.back() = outlineverts[0];
-
-	D3D11_BUFFER_DESC bd = D3D11_BUFFER_DESC();
-	bd.Usage = D3D11_USAGE_DYNAMIC;
-	bd.ByteWidth = sizeof(VERTEX) * outlineverts.size();
-	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-	dev->CreateBuffer(&bd, NULL, &outlinevbuffer);
-	D3D11_MAPPED_SUBRESOURCE ms;
-	devcon->Map(outlinevbuffer, NULL, D3D11_MAP_WRITE_DISCARD, NULL, &ms);
-	memcpy(ms.pData, outlineverts.data(), outlineverts.size() * sizeof(VERTEX));
-	devcon->Unmap(outlinevbuffer, NULL);
+	outlines = outl.GenerateExtrudedOutlines(dev, devcon, 2.0f, 2);
 }
 
 void InitPipeline()
