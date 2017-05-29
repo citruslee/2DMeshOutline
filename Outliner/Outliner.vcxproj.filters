@@ -91,5 +91,11 @@
     <ClInclude Include="tiny_obj_loader.h">
       <Filter>Header Files\3rdparty</Filter>
     </ClInclude>
+    <ClInclude Include="MathExtension.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Camera.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

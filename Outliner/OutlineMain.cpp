@@ -1,3 +1,6 @@
+#pragma comment (lib, "d3d11.lib")
+#pragma comment (lib, "D3DCompiler.lib")
+
 #include <windows.h>
 #include <windowsx.h>
 #include <d3d11.h>
@@ -5,21 +8,20 @@
 #include <d3dcompiler.h>
 #include <unordered_map>
 
-#define TINYOBJLOADER_IMPLEMENTATION
-#include "tiny_obj_loader.h"
-
 #include "imgui.h"
 #include "imgui_impl_dx11.hpp"
 #include "LogWindow.hpp"
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
+#include "MathExtension.hpp"
 #include "clipper.hpp"  
 #include "Mesh.hpp"
 #include "Outliner.hpp"
+#include "Camera.hpp"
 
-#pragma comment (lib, "d3d11.lib")
-#pragma comment (lib, "D3DCompiler.lib")
-
-#define SCREEN_WIDTH  1600
-#define SCREEN_HEIGHT 900
+#define SCREEN_WIDTH  400
+#define SCREEN_HEIGHT 300
 
 using namespace ClipperLib;
 using namespace DirectX;
@@ -29,11 +31,11 @@ static LogWindow logger;
 typedef struct ConstantBuffer
 {
 	DirectX::XMMATRIX mWorldViewProj;
-	DirectX::XMFLOAT4 vSomeVectorThatMayBeNeededByASpecificShader;
-	float scale;
-	float fTime;
-	float fSomeFloatThatMayBeNeededByASpecificShader2;
-	float fSomeFloatThatMayBeNeededByASpecificShader3;
+	DirectX::XMFLOAT4 unused0;
+	float unused1;
+	float unused2;
+	float unused3;
+	float unused4;
 } VS_CONSTANT_BUFFER;
 
 IDXGISwapChain *swapchain = nullptr;
@@ -51,28 +53,11 @@ ID3D11RasterizerState *wireframe = nullptr;
 ID3D11RasterizerState *fillsolid = nullptr;
 
 DirectX::XMMATRIX WVP;
-DirectX::XMMATRIX camRotationMatrix;
-DirectX::XMMATRIX camView;
-DirectX::XMMATRIX camProjection;
-DirectX::XMVECTOR camPosition;
-DirectX::XMVECTOR camTarget;
-DirectX::XMVECTOR camUp;
-DirectX::XMVECTOR DefaultForward = DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-DirectX::XMVECTOR DefaultRight = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-DirectX::XMVECTOR camForward = DirectX::XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-DirectX::XMVECTOR camRight = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
 
 ID3D11Buffer *outlinevbuffer = nullptr;
 std::vector<VERTEX> outlineverts;
+Camera cam;
 
-float moveLeftRight = 0.0f;
-float moveBackForward = 0.0f;
-
-float camYaw = 0.0f;
-float camPitch = 0.0f;
-
-WORD oldMouseX, oldMouseY, mouseX, mouseY;
-float angle = 0;
 
 void InitD3D(HWND hWnd);
 void RenderFrame(void);
@@ -80,30 +65,8 @@ void CleanD3D(void);
 void InitGraphics(void);
 void InitPipeline(void);
 
-#pragma warning(disable:4018)
-
-inline XMFLOAT3& operator+=(XMFLOAT3 &l, const XMFLOAT3 &r) { l.x += r.x; l.y += r.y; l.z += r.z; return l; }
-inline XMFLOAT3& operator*=(XMFLOAT3 &l, float r) { l.x *= r; l.y *= r; l.z *= r; return l; }
-inline XMFLOAT3 operator-(const XMFLOAT3 &l, const XMFLOAT3 &r) { return XMFLOAT3(l.x - r.x, l.y - r.y, l.z - r.z); }
-inline XMFLOAT3 operator*(const XMFLOAT3 &l, float r) { return XMFLOAT3(l.x*r, l.y*r, l.z*r); }
-inline XMFLOAT3 operator/(const XMFLOAT3 &l, float r) { return XMFLOAT3(l.x / r, l.y / r, l.z / r); }
-
-inline float Dot(const XMFLOAT3 a, const XMFLOAT3 b)
-{
-	return a.x*b.x + a.y*b.y + a.z*b.z;
-}
-
-inline float Len(const XMFLOAT3 a)
-{
-	return sqrt(Dot(a, a));
-}
-
-inline XMFLOAT3 Normalize(XMFLOAT3 a)
-{
-	return a / Len(a);
-}
-
 Mesh obj;
+Outliner outl;
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 extern LRESULT ImGui_ImplDX11_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -131,7 +94,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	MSG msg;
 	while (TRUE)
 	{
-
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
@@ -142,28 +104,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				break;
 			}
 		}
-		
 		RenderFrame();
 	}
 	CleanD3D();
 	return msg.wParam;
 }
 
-void UpdateCamera()
-{
-	camRotationMatrix = DirectX::XMMatrixRotationRollPitchYaw(camPitch, camYaw, 0);
-	camTarget = DirectX::XMVector3TransformCoord(DefaultForward, camRotationMatrix);
-	camTarget = DirectX::XMVector3Normalize(camTarget);
-	camRight = DirectX::XMVector3TransformCoord(DefaultRight, camRotationMatrix);
-	camForward = DirectX::XMVector3TransformCoord(DefaultForward, camRotationMatrix);
-	camUp = DirectX::XMVector3Cross(camForward, camRight);
-	camPosition += moveLeftRight * camRight;
-	camPosition += moveBackForward * camForward;
-	moveLeftRight = 0.0f;
-	moveBackForward = 0.0f;
-	camTarget = camPosition + camTarget;
-	camView = DirectX::XMMatrixLookAtLH(camPosition, camTarget, camUp);
-}
 
 void InitD3D(HWND hWnd)
 {
@@ -205,54 +151,21 @@ void RenderFrame(void)
 	bool show_test_window = true;
 	bool show_another_window = false;
 	ImVec4 clear_col = ImColor(114, 144, 154);
-
 	static bool renderwireframe = false;
-	static float hullN = 0.1f;
-	static float scale = 0.1f;
 
 	ImGui_ImplDX11_NewFrame();
 	{
 		ImGui::SetNextWindowSize(ImVec2(200, 100), ImGuiSetCond_FirstUseEver);
 		ImGui::Begin("Outline", &show_another_window);
-		ImGui::Text("Hello");
-		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-
-		ImGui::Text("left/right %f", moveLeftRight);
-		ImGui::Text("back/forward %f", moveBackForward);
-
-		ImGui::SliderFloat("N (Hull)", (float *)&hullN, -100.0f, 100.0f);
-		ImGui::SliderFloat("Scale", (float *)&scale, 0.0f, 100.0f);
-		ImGui::Checkbox("Render Wireframe?", &renderwireframe);
-
-		if (ImGui::Button("remap"))
 		{
-			
+			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+			ImGui::Checkbox("Render Wireframe?", &renderwireframe);
 		}
-		logger.Draw("Log");
-
-	
 		ImGui::End();
+		logger.Draw("Log");
 	}
-
-	float speed = 0.01f;
-
-	if (GetAsyncKeyState(0x41))
-	{
-		moveLeftRight -= speed;
-	}
-	if (GetAsyncKeyState(0x44))
-	{
-		moveLeftRight += speed;
-	}
-	if (GetAsyncKeyState(0x57))
-	{
-		moveBackForward += speed;
-	}
-	if (GetAsyncKeyState(0x53))
-	{
-		moveBackForward -= speed;
-	}
-
+	
+	cam.UpdateInput();
 	{
 		D3D11_MAPPED_SUBRESOURCE mappedResource;
 		devcon->Map(g_pConstantBuffer11, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
@@ -262,18 +175,16 @@ void RenderFrame(void)
 		static float a = 0.0f;
 		a += 0.0001f;
 
-
+		cam.UpdateCamera();
 		WVP = XMMatrixIdentity();
-		WVP = DirectX::XMMatrixIdentity() * camView * camProjection;
-
-		UpdateCamera();
-
+		WVP = DirectX::XMMatrixIdentity() * cam.GetViewMatrix() * cam.GetProjectionMatrix();
+		
 		dataPtr->mWorldViewProj = XMMatrixTranspose(WVP);
-		dataPtr->vSomeVectorThatMayBeNeededByASpecificShader = DirectX::XMFLOAT4(1, sin(a), 1, 1);
-		dataPtr->scale = 1.0f;
-		dataPtr->fTime = 1.0f;
-		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
-		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
+		dataPtr->unused0 = DirectX::XMFLOAT4(1, sin(a), 1, 1);
+		dataPtr->unused1 = 1.0f;
+		dataPtr->unused2 = 1.0f;
+		dataPtr->unused3 = 2.0f;
+		dataPtr->unused4 = 4.0f;
 		devcon->Unmap(g_pConstantBuffer11, 0);
 	}
 
@@ -300,20 +211,6 @@ void RenderFrame(void)
 	UINT stride = sizeof(VERTEX);
 	UINT offset = 0;
 
-	{
-		D3D11_MAPPED_SUBRESOURCE mappedResource;
-		devcon->Map(g_pConstantBuffer11, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
-
-		VS_CONSTANT_BUFFER* dataPtr = (VS_CONSTANT_BUFFER*)mappedResource.pData;
-
-		dataPtr->mWorldViewProj = XMMatrixTranspose(WVP);
-		dataPtr->scale = scale;
-		dataPtr->fTime = 1.0f;
-		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
-		dataPtr->fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
-		devcon->Unmap(g_pConstantBuffer11, 0);
-	}
-
 	devcon->IASetVertexBuffers(0, 1, &outlinevbuffer, &stride, &offset);
 	devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
 	devcon->Draw(outlineverts.size(), 0);
@@ -337,22 +234,12 @@ void CleanD3D(void)
 
 void InitGraphics()
 {
-	const char *filename = "C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";//"C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";
+	//const char *filename = "C:\\Users\\Citrus\\Documents\\Visual Studio 2015\\Projects\\Outliner\\Outliner\\assets\\testmesh.obj";
+	const char *filename = "C:\\Users\\Citrus\\Source\\Repos\\2DMeshOutline\\Outliner\\assets\\testmesh.obj";
 
 	obj.LoadObj(dev, devcon, filename);
-
-	//Camera information
-	camPosition = DirectX::XMVectorSet(0.0f, 5.0f, -8.0f, 0.0f);
-	camTarget = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-	camUp = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-
-	//Set the View matrix
-	camView = DirectX::XMMatrixLookAtLH(camPosition, camTarget, camUp);
-
-	//Set the Projection matrix
-	camProjection = DirectX::XMMatrixPerspectiveFovLH(0.4f*3.14f, (float)SCREEN_WIDTH / SCREEN_HEIGHT, 1.0f, 1000.0f);
-
-	Outliner outl;
+	cam.Init((float)SCREEN_WIDTH, (float)SCREEN_HEIGHT);
+	
 	auto outline = outl.GetOutlines(obj.GetTriangles(), obj.GetVertexPositions());
 	for (auto &o : outline[0].positions)
 	{
@@ -417,11 +304,11 @@ void InitPipeline()
 	dev->CreateInputLayout(ied, 2, VS->GetBufferPointer(), VS->GetBufferSize(), &pLayout);
 	
 	VS_CONSTANT_BUFFER cbuffer = VS_CONSTANT_BUFFER();
-	cbuffer.vSomeVectorThatMayBeNeededByASpecificShader = DirectX::XMFLOAT4(1, 1, 0, 1);
-	cbuffer.scale = 1.0f;
-	cbuffer.fTime = 1.0f;
-	cbuffer.fSomeFloatThatMayBeNeededByASpecificShader2 = 2.0f;
-	cbuffer.fSomeFloatThatMayBeNeededByASpecificShader3 = 4.0f;
+	cbuffer.unused0 = DirectX::XMFLOAT4(1, 1, 0, 1);
+	cbuffer.unused1 = 1.0f;
+	cbuffer.unused2 = 1.0f;
+	cbuffer.unused3 = 2.0f;
+	cbuffer.unused4 = 4.0f;
 
 	D3D11_BUFFER_DESC cbDesc;
 	cbDesc.ByteWidth = sizeof(VS_CONSTANT_BUFFER);
@@ -470,20 +357,6 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 		PostQuitMessage(0);
 		return 0;
 	case WM_MOUSEMOVE:
-		// save old mouse coordinates
-		oldMouseX = mouseX;
-		oldMouseY = mouseY;
-
-		// get mouse coordinates from Windows
-		mouseX = LOWORD(lParam);
-		mouseY = HIWORD(lParam);
-
-		if ((mouseX - oldMouseX) > 0)             // mouse moved to the right
-			angle += 3.0f;
-		else if ((mouseX - oldMouseX) < 0)     // mouse moved to the left
-			angle -= 3.0f;
-
-		return 0;
 		break;
 	}
 
