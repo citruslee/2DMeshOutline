@@ -22,7 +22,6 @@ std::vector<LineLoop> Outliner::GetOutlines(const std::vector<int>& triangles, c
 			}
 			else
 			{
-				//edges.insert(std::pair<std::string, std::pair<int, int>>(edge, std::pair<int, int>(vert1, vert2)));
 				edges[edge] = std::pair<int, int>(vert1, vert2);
 			}
 		}
@@ -67,10 +66,10 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 	for (auto & loop : loops)
 	{
 		//for N repetitions (user defined)
-		for (int rep = 0; rep < repetitions; rep++)
+		for (int rep = 0; rep < repetitions * 2; rep += 2)
 		{
 			std::vector<VERTEX> outline;
-			
+
 			//we store first the outline vertices
 			for (auto &o : loop.positions)
 			{
@@ -81,7 +80,6 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
 				outline.push_back(vx);
 			}
-			
 
 			std::vector<XMFLOAT3> normals;
 			//then we precalc the normal vectors to each line segment
@@ -107,7 +105,7 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				outline[i].color = XMFLOAT4(v.x, v.y, 0.0f, 1.0f);
 			}
 
-			std::vector<VERTEX> extrusion(outline);
+			std::vector<VERTEX> extrusion = outline;
 			//then we apply the respective normal to respective vertex
 			for (int i = 0; i < normals.size(); i++)
 			{
@@ -117,21 +115,34 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				//here be dragons
 				v.x = fabsf(n0.x) > fabsf(n1.x) ? n0.x : n1.x;
 				v.y = fabsf(n0.y) > fabsf(n1.y) ? n0.y : n1.y;
-				extrusion[i].pos += (v * (offset * repetitions));
+				extrusion[i].pos += (v * (offset));
 				extrusion[i].color = XMFLOAT4(v.x, v.y, 0.0f, 1.0f);
 			}
 			//finish loop
 			extrusion.back() = extrusion[0];
 
+			std::vector<VERTEX> extruded;
+
+			for (int i = 0; i < outline.size(); i++)
+			{
+				auto &u0 = outline[i];
+				auto &u1 = outline[(i + outline.size() - 1) % outline.size()];
+				auto &v0 = extrusion[i];
+				auto &v1 = extrusion[(i + extrusion.size() - 1) % extrusion.size()];
+
+				extruded.push_back(u0);
+				extruded.push_back(v0);
+				extruded.push_back(v1);
+
+				extruded.push_back(v1);
+				extruded.push_back(u0);
+				extruded.push_back(u1);
+			}
+
 			ExtrudedOutline out1;
-			out1.vertices = std::vector<VERTEX>(outline);
-			out1.vertexBuffer = this->CreateVertexBufferFromData(dev, devcon, outline.size() * sizeof(VERTEX), outline);
-
-			ExtrudedOutline out2;
-			out2.vertices = std::vector<VERTEX>(extrusion);
-			out2.vertexBuffer = this->CreateVertexBufferFromData(dev, devcon, extrusion.size() * sizeof(VERTEX), extrusion);
-
-			offsetmesh.push_back(out2);
+			out1.vertices = extruded;
+			out1.vertexBuffer = this->CreateVertexBufferFromData(dev, devcon, extruded.size() * sizeof(VERTEX), extruded);
+			offsetmesh.push_back(out1);
 		}
 	}
 	return offsetmesh;
@@ -152,4 +163,35 @@ ID3D11Buffer *Outliner::CreateVertexBufferFromData(ID3D11Device * dev, ID3D11Dev
 	memcpy(ms.pData, vertices.data(), bytewidth);
 	devcon->Unmap(buf, NULL);
 	return buf;
+}
+
+bool Outliner::DoLinesIntersect(DirectX::XMFLOAT3 p1, DirectX::XMFLOAT3 p2, DirectX::XMFLOAT3 p3, DirectX::XMFLOAT3 p4)
+{
+	// Store the values for fast access and easy
+	// equations-to-code conversion
+	float x1 = p1.x, x2 = p2.x, x3 = p3.x, x4 = p4.x;
+	float y1 = p1.y, y2 = p2.y, y3 = p3.y, y4 = p4.y;
+
+	float d = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+	// If d is zero, there is no intersection
+	if (d == 0)
+	{
+		return false;
+	}
+	// Get the x and y
+	float pre = (x1*y2 - y1*x2), post = (x3*y4 - y3*x4);
+	float x = (pre * (x3 - x4) - (x1 - x2) * post) / d;
+	float y = (pre * (y3 - y4) - (y1 - y2) * post) / d;
+
+	// Check if the x and y coordinates are within both lines
+	if (x < min(x1, x2) || x > max(x1, x2) || x < min(x3, x4) || x > max(x3, x4))
+	{
+		return false;
+	}
+	if (y < min(y1, y2) || y > max(y1, y2) || y < min(y3, y4) || y > max(y3, y4))
+	{
+		return false;
+	}
+
+	return true;
 }

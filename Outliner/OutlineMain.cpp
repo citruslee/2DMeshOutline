@@ -17,7 +17,6 @@
 static LogWindow logger;
 
 #include "MathExtension.hpp"
-#include "clipper.hpp"  
 #include "Mesh.hpp"
 #include "Outliner.hpp"
 #include "Camera.hpp"
@@ -25,10 +24,7 @@ static LogWindow logger;
 #define SCREEN_WIDTH  400
 #define SCREEN_HEIGHT 300
 
-using namespace ClipperLib;
 using namespace DirectX;
-
-
 
 typedef struct ConstantBuffer
 {
@@ -230,7 +226,7 @@ void RenderFrame(void)
 		UINT stride = sizeof(VERTEX);
 		UINT offset = 0;
 		devcon->IASetVertexBuffers(0, 1, &outlineBuffer.vertexBuffer, &stride, &offset);
-		devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP);
+		devcon->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		devcon->Draw(outlineBuffer.vertices.size(), 0);
 	}
 	
@@ -257,7 +253,7 @@ void InitGraphics()
 	obj.LoadObj(dev, devcon, filename);
 	cam.Init((float)SCREEN_WIDTH, (float)SCREEN_HEIGHT);
 	auto outline = outl.GetOutlines(obj.GetTriangles(), obj.GetVertexPositions());
-	outlines = outl.GenerateExtrudedOutlines(dev, devcon, 2.0f, 2);
+	outlines = outl.GenerateExtrudedOutlines(dev, devcon, 0.2f, 4);
 }
 
 void InitPipeline()

@@ -36,9 +36,6 @@
     <ClCompile Include="imgui_impl_dx11.cpp">
       <Filter>Source Files\3rdparty</Filter>
     </ClCompile>
-    <ClCompile Include="clipper.cpp">
-      <Filter>Source Files\3rdparty</Filter>
-    </ClCompile>
     <ClCompile Include="Outliner.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -78,9 +75,6 @@
     </ClInclude>
     <ClInclude Include="LogWindow.hpp">
       <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="clipper.hpp">
-      <Filter>Header Files\3rdparty</Filter>
     </ClInclude>
     <ClInclude Include="Mesh.hpp">
       <Filter>Header Files</Filter>

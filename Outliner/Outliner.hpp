@@ -34,8 +34,11 @@ class Outliner
 public:
 	std::vector<LineLoop> GetOutlines(const std::vector<int> &triangles, const std::vector<DirectX::XMFLOAT3> &vertices);
 	std::vector<ExtrudedOutline> GenerateExtrudedOutlines(ID3D11Device *dev, ID3D11DeviceContext *devcon, float offset, int repetitions);
-
 	ID3D11Buffer *CreateVertexBufferFromData(ID3D11Device *dev, ID3D11DeviceContext *devcon, UINT bytewidth, std::vector<VERTEX> vertices);
+
+	//http://flassari.is/2008/11/line-line-intersection-in-cplusplus/
+	bool DoLinesIntersect(DirectX::XMFLOAT3 p1, DirectX::XMFLOAT3 p2, DirectX::XMFLOAT3 p3, DirectX::XMFLOAT3 p4);
+	
 private:
 	std::vector<LineLoop> loops;
 };
