@@ -66,7 +66,7 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 	for (auto & loop : loops)
 	{
 		//for N repetitions (user defined)
-		for (int rep = 0; rep < repetitions * 2; rep += 2)
+		for (int rep = 1; rep < repetitions * 2; rep += 2)
 		{
 			std::vector<VERTEX> outline;
 
@@ -80,6 +80,7 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
 				outline.push_back(vx);
 			}
+			
 
 			std::vector<XMFLOAT3> normals;
 			//then we precalc the normal vectors to each line segment
@@ -104,6 +105,7 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				outline[i].pos += (v * (offset * rep));
 				outline[i].color = XMFLOAT4(v.x, v.y, 0.0f, 1.0f);
 			}
+			outline.back() = outline[0];
 
 			std::vector<VERTEX> extrusion = outline;
 			//then we apply the respective normal to respective vertex
@@ -118,17 +120,16 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				extrusion[i].pos += (v * (offset));
 				extrusion[i].color = XMFLOAT4(v.x, v.y, 0.0f, 1.0f);
 			}
-			//finish loop
 			extrusion.back() = extrusion[0];
 
 			std::vector<VERTEX> extruded;
 
-			for (int i = 0; i < outline.size(); i++)
+			for (int i = 0; i < outline.size() - 1; i++)
 			{
 				auto &u0 = outline[i];
-				auto &u1 = outline[(i + outline.size() - 1) % outline.size()];
+				auto &u1 = outline[(i + 1) % outline.size()];
 				auto &v0 = extrusion[i];
-				auto &v1 = extrusion[(i + extrusion.size() - 1) % extrusion.size()];
+				auto &v1 = extrusion[(i + 1) % extrusion.size()];
 
 				extruded.push_back(u0);
 				extruded.push_back(v0);
