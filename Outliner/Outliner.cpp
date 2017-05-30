@@ -42,19 +42,19 @@ std::vector<LineLoop> Outliner::GetOutlines(const std::vector<int>& triangles, c
 	auto i = lookup.begin();
 	while (!lookup.empty())
 	{
-		line.positions.push_back(vertices[i->first]);
-		auto nextVert = i->second;
-		lookup.erase(i);
-		i = lookup.find(nextVert);
+	line.positions.push_back(vertices[i->first]);
+	auto nextVert = i->second;
+	lookup.erase(i);
+	i = lookup.find(nextVert);
 
-		// Shape complete
-		if (i == lookup.end())
-		{
-			line.positions.push_back(vertices[nextVert]);
-			loops.push_back(line);
-			line.positions.clear();
-			i = lookup.begin();
-		}
+	// Shape complete
+	if (i == lookup.end())
+	{
+		line.positions.push_back(vertices[nextVert]);
+		loops.push_back(line);
+		line.positions.clear();
+		i = lookup.begin();
+	}
 	}
 	return loops;
 }
@@ -80,7 +80,7 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
 				outline.push_back(vx);
 			}
-			
+
 
 			std::vector<XMFLOAT3> normals;
 			//then we precalc the normal vectors to each line segment
@@ -138,6 +138,35 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				extruded.push_back(v1);
 				extruded.push_back(u0);
 				extruded.push_back(u1);
+			}
+
+			if (offsetmesh.size() > 0)
+			{
+				auto &lastmesh = offsetmesh.back().vertices;
+				bool lastStep = false;
+				for (int i = 0; i < extruded.size(); i++)
+				{
+					auto &u0 = extruded[i];
+					auto &u1 = extruded[(i + 1) % extruded.size()];
+
+					for (int i = 0; i < lastmesh.size(); i++)
+					{
+						auto &v0 = lastmesh[i];
+						auto &v1 = lastmesh[(i + 1) % lastmesh.size()];
+						if (DoLinesIntersect(u0.pos, u1.pos, v0.pos, v1.pos))
+						{
+							lastStep = true;
+						}
+					}
+					if (lastStep)
+					{
+						break;
+					}
+				}
+				if (lastStep)
+				{
+					break;
+				}
 			}
 
 			ExtrudedOutline out1;
