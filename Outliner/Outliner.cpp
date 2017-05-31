@@ -42,28 +42,70 @@ std::vector<LineLoop> Outliner::GetOutlines(const std::vector<int>& triangles, c
 	auto i = lookup.begin();
 	while (!lookup.empty())
 	{
-	line.positions.push_back(vertices[i->first]);
-	auto nextVert = i->second;
-	lookup.erase(i);
-	i = lookup.find(nextVert);
+		line.positions.push_back(vertices[i->first]);
+		auto nextVert = i->second;
+		lookup.erase(i);
+		i = lookup.find(nextVert);
 
-	// Shape complete
-	if (i == lookup.end())
-	{
-		line.positions.push_back(vertices[nextVert]);
-		loops.push_back(line);
-		line.positions.clear();
-		i = lookup.begin();
-	}
+		// Shape complete
+		if (i == lookup.end())
+		{
+			line.positions.push_back(vertices[nextVert]);
+			loops.push_back(line);
+			line.positions.clear();
+			i = lookup.begin();
+		}
 	}
 	return loops;
+}
+
+bool Outliner::CheckIfEdgesOverlap(std::vector<VERTEX> firstmesh, std::vector<VERTEX> secondmesh)
+{
+	for (int i = 0; i < secondmesh.size(); i++)
+	{
+		auto &u0 = secondmesh[i];
+		auto &u1 = secondmesh[(i + 1) % secondmesh.size()];
+		for (int i = 0; i < firstmesh.size(); i++)
+		{
+			auto &v0 = firstmesh[i];
+			auto &v1 = firstmesh[(i + 1) % firstmesh.size()];
+
+			if (DoLinesIntersect(u0.pos, u1.pos, v0.pos, v1.pos))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+std::vector<VERTEX> Outliner::ExtrudeFromLoops(std::vector<VERTEX> inner, std::vector<VERTEX> outer)
+{
+	std::vector<VERTEX> extruded;
+
+	for (int i = 0; i < inner.size() - 1; i++)
+	{
+		auto &u0 = inner[i];
+		auto &u1 = inner[(i + 1) % inner.size()];
+		auto &v0 = outer[i];
+		auto &v1 = outer[(i + 1) % outer.size()];
+
+		extruded.push_back(u0);
+		extruded.push_back(v0);
+		extruded.push_back(v1);
+
+		extruded.push_back(v1);
+		extruded.push_back(u0);
+		extruded.push_back(u1);
+	}
+	return extruded;
 }
 
 std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *dev, ID3D11DeviceContext *devcon, float offset, int repetitions)
 {
 	std::vector<ExtrudedOutline> offsetmesh;
 	//for each loop
-	for (auto & loop : loops)
+	for (int loopindex = 0; loopindex < loops.size(); loopindex++)
 	{
 		//for N repetitions (user defined)
 		for (int rep = 1; rep < repetitions * 2; rep += 2)
@@ -71,7 +113,7 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 			std::vector<VERTEX> outline;
 
 			//we store first the outline vertices
-			for (auto &o : loop.positions)
+			for (auto &o : loops[loopindex].positions)
 			{
 				VERTEX vx = VERTEX();
 				vx.pos.x = o.x;
@@ -80,7 +122,6 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 				vx.color = DirectX::XMFLOAT4(0, 1, 0, 1);
 				outline.push_back(vx);
 			}
-
 
 			std::vector<XMFLOAT3> normals;
 			//then we precalc the normal vectors to each line segment
@@ -122,48 +163,20 @@ std::vector<ExtrudedOutline> Outliner::GenerateExtrudedOutlines(ID3D11Device *de
 			}
 			extrusion.back() = extrusion[0];
 
-			std::vector<VERTEX> extruded;
-
-			for (int i = 0; i < outline.size() - 1; i++)
-			{
-				auto &u0 = outline[i];
-				auto &u1 = outline[(i + 1) % outline.size()];
-				auto &v0 = extrusion[i];
-				auto &v1 = extrusion[(i + 1) % extrusion.size()];
-
-				extruded.push_back(u0);
-				extruded.push_back(v0);
-				extruded.push_back(v1);
-
-				extruded.push_back(v1);
-				extruded.push_back(u0);
-				extruded.push_back(u1);
-			}
-
+			std::vector<VERTEX> extruded = ExtrudeFromLoops(outline, extrusion);
+			
 			if (offsetmesh.size() > 0)
 			{
-				auto &lastmesh = offsetmesh.back().vertices;
-				bool lastStep = false;
-				for (int i = 0; i < extruded.size(); i++)
+				bool canAddThisOutline = true;
+				for (int i = 0; i < offsetmesh.size(); i++)
 				{
-					auto &u0 = extruded[i];
-					auto &u1 = extruded[(i + 1) % extruded.size()];
-
-					for (int i = 0; i < lastmesh.size(); i++)
+					if (CheckIfEdgesOverlap(extruded, offsetmesh[i].vertices))
 					{
-						auto &v0 = lastmesh[i];
-						auto &v1 = lastmesh[(i + 1) % lastmesh.size()];
-						if (DoLinesIntersect(u0.pos, u1.pos, v0.pos, v1.pos))
-						{
-							lastStep = true;
-						}
-					}
-					if (lastStep)
-					{
+						canAddThisOutline = false;
 						break;
 					}
 				}
-				if (lastStep)
+				if (!canAddThisOutline)
 				{
 					break;
 				}
